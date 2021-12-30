@@ -1,0 +1,9 @@
+{
+    "python.testing.pytestArgs": [
+        "httpx_cache",
+        "--log-cli-level",
+        "DEBUG"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
+}

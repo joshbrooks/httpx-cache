@@ -127,3 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Cached results as a dbm and a dir full of gzips
+cache.db
+cache/*

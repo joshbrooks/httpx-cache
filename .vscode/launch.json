@@ -1,0 +1,44 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Py; black",
+            "type": "python",
+            "request": "launch",
+            "module": "black",
+            "args": [
+                "."
+            ],
+        },
+        {
+            "name": "Py: Mypy",
+            "type": "python",
+            "request": "launch",
+            "module": "mypy",
+            "args": [
+                "."
+            ]
+        },
+        {
+            "name": "Py: flake8",
+            "type": "python",
+            "request": "launch",
+            "module": "flake8",
+            "args": [
+                "."
+            ]
+        },
+        {
+            "name": "Py: isort",
+            "type": "python",
+            "request": "launch",
+            "module": "isort",
+            "args": [
+                "."
+            ]
+        },
+    ]
+}
