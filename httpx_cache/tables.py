@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import json
 import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
-import dbm
+
+import aiofiles
 import httpx
+from aioredis.client import Redis
 from pydantic import BaseModel, Field
-import json
+
 from .settings import Settings
 
 logger = logging.getLogger("httpx_cache.tables")
@@ -45,7 +48,7 @@ class Request(BaseModel):
         return settings.content_path / f"{file_hash}.gz"
 
     @classmethod
-    def from_response(cls, response: httpx.Response) -> Request:
+    async def from_response(cls, response: httpx.Response, pool: Redis) -> Request:
         response.raise_for_status()
         instance = cls(
             url=f"{response.url}",
@@ -55,18 +58,11 @@ class Request(BaseModel):
             charset_encoding=response.charset_encoding,
         )
         logger.debug("Setting content")
-        instance.save(response)
+        await instance.save(response, pool)
         return instance
 
     @classmethod
-    def from_url(cls, url: str, client: httpx.Client = None):
-        logger.debug("Caching content of %s", url)
-        if client:
-            return cls.from_response(client.get(url))
-        return cls.from_response(httpx.get(url))
-
-    @classmethod
-    async def afrom_url(cls, url: str, client: Optional[httpx.AsyncClient] = None) -> Request:
+    async def from_url(cls, url: str, pool: Redis, client: Optional[httpx.AsyncClient] = None) -> Request:
         logger.debug("Async Caching content of %s", url)
 
         if client:
@@ -74,39 +70,37 @@ class Request(BaseModel):
         else:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.get(url)
-        return cls.from_response(response)
+        instance = await cls.from_response(response, pool)
+        return instance
 
-    def get_content(self) -> bytes:
-        with gzip.open(self.path, "rb") as f:
-            file_content = f.read()
-        return file_content
+    async def get_content(self) -> bytes:
+        async with aiofiles.open(self.path, mode="rb") as f:
+            content = await f.read()
+            decompressed = gzip.decompress(content)
+            return decompressed
 
-    def set_content(self, response) -> None:
-        content = response.content  # type: bytes
-        with gzip.open(self.path, "wb") as f:
-            f.write(content)
+    async def set_content(self, response) -> None:
+        async with aiofiles.open(self.path, mode="wb") as f:
+            content = response.content  # type: bytes
+            await f.write(gzip.compress(content))
             return
 
     def del_content(self):
         os.remove(self.path)
 
-    content = property(get_content, set_content, del_content, "Derived path of the given response instance")
-
-    def set_metadata(self):
+    async def set_metadata(self, pool: Redis):
         """
-        Save the URL and metadata to a dbm file
+        Save the URL and metadata to a redis db
         """
-        with dbm.open(settings.meta_db, "c") as db:
-            db[self.url] = self.json()
+        await pool.set(self.url, self.json())
 
-    def save(self, response):
-        self.set_content(response)
-        self.set_metadata()
+    async def save(self, response, pool: Redis):
+        await self.set_content(response)
+        await self.set_metadata(pool=pool)
 
     @staticmethod
-    def get(url: str) -> Optional[Request]:
-        with dbm.open(settings.meta_db, "c") as db:
-            content = db.get(url, None)
-        if not content:
-            return None
-        return Request(**json.loads(content))
+    async def get(url: str, pool: Redis) -> Optional[Request]:
+        content = await pool.get(url)
+        if content:
+            return Request(**json.loads(content))
+        return None
