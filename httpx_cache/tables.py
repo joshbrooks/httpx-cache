@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import aiofiles
+import aioredis
 import httpx
 from aioredis.client import Redis
+from httpx import AsyncClient
 from pydantic import BaseModel, Field
 
 from .settings import Settings
@@ -62,7 +64,18 @@ class Request(BaseModel):
         return instance
 
     @classmethod
-    async def from_url(cls, url: str, pool: Redis, client: httpx.AsyncClient) -> Request:
+    async def from_url(cls, url: str, *, pool: Optional[Redis] = None, client: Optional[AsyncClient] = None) -> Request:
+
+        if not pool:
+            pool = await aioredis.from_url(**settings.redis.dict())
+            result = await cls.from_url(url, pool=pool, client=client)
+            return result
+
+        if not client:
+            async with AsyncClient() as client:
+                result = await cls.from_url(url, pool=pool, client=client)
+                return result
+
         logger.debug("Async Caching content of %s", url)
         response = await client.get(url)
         instance = await cls.from_response(response, pool)
