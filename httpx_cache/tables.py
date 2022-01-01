@@ -62,14 +62,9 @@ class Request(BaseModel):
         return instance
 
     @classmethod
-    async def from_url(cls, url: str, pool: Redis, client: Optional[httpx.AsyncClient] = None) -> Request:
+    async def from_url(cls, url: str, pool: Redis, client: httpx.AsyncClient) -> Request:
         logger.debug("Async Caching content of %s", url)
-
-        if client:
-            response = await client.get(url)
-        else:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.get(url)
+        response = await client.get(url)
         instance = await cls.from_response(response, pool)
         return instance
 

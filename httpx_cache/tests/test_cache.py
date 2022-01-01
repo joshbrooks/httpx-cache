@@ -2,9 +2,9 @@ import logging
 from pathlib import Path
 
 import aioredis
-import httpx
 import pytest
 from aioredis.client import Redis
+from httpx import AsyncClient, HTTPStatusError
 from pytest_httpx import HTTPXMock
 
 from httpx_cache.tables import Request
@@ -27,8 +27,8 @@ async def test_cache(httpx_mock: HTTPXMock, pool: Redis):
     url = "https://iatiregistry.org/api/3/action/package_search"
     with open(path) as content:
         httpx_mock.add_response(url=url, content=content.read().encode())
-
-    await Request.from_url(url, pool)
+    async with AsyncClient() as client:
+        await Request.from_url(url, pool, client)
 
 
 @pytest.mark.asyncio
@@ -38,10 +38,10 @@ async def test_acache(httpx_mock: HTTPXMock, pool):
     url = "https://iatiregistry.org/api/3/action/package_search"
     with open(path) as content:
         httpx_mock.add_response(url=url, content=content.read().encode())
-
-    request_awaitable = Request.from_url(url, pool)
-    r = await request_awaitable  # type: Request
-    r.json()
+    async with AsyncClient() as client:
+        request_awaitable = Request.from_url(url, pool, client)
+        r = await request_awaitable  # type: Request
+        r.json()
 
     cached_request = await Request.get(url, pool)
     logger.debug(cached_request)
@@ -51,7 +51,6 @@ async def test_acache(httpx_mock: HTTPXMock, pool):
 @pytest.mark.asyncio
 async def test_uncached(httpx_mock: HTTPXMock, pool: Redis):
     url = "https://iatiregistry.org/api/3/action/package_search-does-not-exist"
-    pool = await aioredis.from_url(**settings.redis.dict())
     cached_request = await Request.get(f"{url}-does-not-exist", pool)
     assert not cached_request
 
@@ -66,6 +65,6 @@ async def test_cache_forbidden(httpx_mock: HTTPXMock, pool: Redis):
     url = "https://iatiregistry.org/api/3/action/package_search"
     with open(path) as content:
         httpx_mock.add_response(url=url, content=content.read().encode(), status_code=403)
-
-    with pytest.raises(httpx.HTTPStatusError):
-        await Request.from_url(url, pool)
+    async with AsyncClient() as client:
+        with pytest.raises(HTTPStatusError):
+            await Request.from_url(url, pool, client)
