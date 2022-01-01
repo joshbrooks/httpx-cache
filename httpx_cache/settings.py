@@ -3,10 +3,14 @@ from pathlib import Path
 from pydantic import BaseSettings
 
 
-class RedisSettings(BaseSettings):
-    url: str = "redis://localhost"
+class Redisv2Settings(BaseSettings):
+    url: str = "redis://localhost"  # 2.0 +
     encoding: str = "utf-8"
     decode_responses = True
+
+
+class RedisSettings(BaseSettings):
+    address: str = "redis://localhost"
 
 
 class Settings(BaseSettings):

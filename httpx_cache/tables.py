@@ -7,12 +7,11 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import aiofiles
 import aioredis
 import httpx
-from aioredis.client import Redis
 from httpx import AsyncClient
 from pydantic import BaseModel, Field
 
@@ -50,7 +49,7 @@ class Request(BaseModel):
         return settings.content_path / f"{file_hash}.gz"
 
     @classmethod
-    async def from_response(cls, response: httpx.Response, pool: Redis) -> Request:
+    async def from_response(cls, response: httpx.Response, pool: Any) -> Request:
         response.raise_for_status()
         instance = cls(
             url=f"{response.url}",
@@ -64,11 +63,19 @@ class Request(BaseModel):
         return instance
 
     @classmethod
-    async def from_url(cls, url: str, *, pool: Optional[Redis] = None, client: Optional[AsyncClient] = None) -> Request:
+    async def from_url(cls, url: str, *, pool: Optional[Any] = None, client: Optional[AsyncClient] = None) -> Request:
 
         if not pool:
-            pool = await aioredis.from_url(**settings.redis.dict())
-            result = await cls.from_url(url, pool=pool, client=client)
+
+            pool = await aioredis.create_redis(**settings.redis.dict())
+            try:
+                result = await cls.from_url(url, pool=pool, client=client)
+            except Exception as E:
+                pool.close()
+                raise
+
+            pool.close()
+
             return result
 
         if not client:
@@ -96,19 +103,32 @@ class Request(BaseModel):
     def del_content(self):
         os.remove(self.path)
 
-    async def set_metadata(self, pool: Redis):
+    async def set_metadata(self, pool: Any):
         """
         Save the URL and metadata to a redis db
         """
         await pool.set(self.url, self.json())
 
-    async def save(self, response, pool: Redis):
+    async def save(self, response, pool: Any):
         await self.set_content(response)
         await self.set_metadata(pool=pool)
 
     @staticmethod
-    async def get(url: str, pool: Redis) -> Optional[Request]:
+    async def get(url: str, pool: Optional[Any] = None) -> Optional[Request]:
+        if not pool:
+            pool = await aioredis.create_redis(**settings.redis.dict())
+            try:
+                request = await Request.get(url, pool=pool)
+            except:
+                pool.close()
+                raise
+            pool.close()
+            return request
         content = await pool.get(url)
         if content:
             return Request(**json.loads(content))
         return None
+
+
+def from_url(url: str, *, pool: Optional[Any] = None, client: Optional[AsyncClient] = None) -> Request:
+    return Request.from_url(url, pool=pool, client=client)
